@@ -1,7 +1,3 @@
-/**
- * AirControlX - Automated Air Traffic Control System
- * Terminal-based implementation for Operating Systems Project Spring 2025
- */
 
  #include <iostream>
  #include <vector>
@@ -18,43 +14,36 @@
  #include <memory>
  #include <algorithm>
  #include <ctime>
- #include <unistd.h> // For fork() and pipes
+ #include <unistd.h> 
  #include <fcntl.h>
  #include <sys/wait.h>
  #include <sys/select.h>
- #include <cstring> // Added for strncpy
-// Add this with the other includes if it's not there already (around line 15)
+ #include <cstring> 
 #include <set>
 
-// Add these includes at the top of the file, after the existing includes
 #include <termios.h>
 #include <limits>
 #include <sys/ioctl.h>
 #include <signal.h>
+#include <SFML/Graphics.hpp>
+#include <SFML/Window.hpp>
+#include <SFML/System.hpp>
+#include <atomic>
 
  using namespace std;
  
- // -------- GLOBAL DEFINITIONS AND ENUMS --------
- 
- // Flight types
  enum class FlightType { COMMERCIAL, CARGO, EMERGENCY };
  
- // Aircraft states for arrivals
  enum class ArrivalState { HOLDING, APPROACH, LANDING, TAXI, AT_GATE };
  
- // Aircraft states for departures
  enum class DepartureState { AT_GATE, TAXI, TAKEOFF_ROLL, CLIMB, CRUISE };
  
- // Direction of flight
  enum class Direction { NORTH, SOUTH, EAST, WEST };
  
- // Runway designations
  enum class Runway { RWY_A, RWY_B, RWY_C, NONE };
  
- // Payment status
  enum class PaymentStatus { UNPAID, PAID, OVERDUE };
  
- // Message types for IPC
  enum class MessageType {
      AVN_CREATED,
      PAYMENT_REQUEST,
@@ -63,16 +52,16 @@
      QUERY_AIRLINE
  };
  
- // IPC Message structure with fixed-size strings
+
  struct IPCMessage {
      MessageType type;
      int avnId;
-     char airline[32]; // Fixed-size buffer for airline name
-     char flightNumber[16]; // Fixed-size buffer for flight number
+     char airline[32]; 
+     char flightNumber[16]; 
      double amount;
-     char details[64]; // Fixed-size buffer for details
-     int minSpeed; // Added for speed range
-     int maxSpeed; // Added for speed range
+     char details[64]; 
+     int minSpeed; 
+     int maxSpeed; 
      
      IPCMessage() : type(MessageType::AVN_CREATED), avnId(0), amount(0.0), minSpeed(0), maxSpeed(0) {
          airline[0] = '\0';
@@ -81,22 +70,18 @@
      }
  };
  
- // -------- SYSTEM CONFIGURATION --------
- 
- // Simulation parameters
+
  const int SIMULATION_TIME = 300; // 5 minutes in seconds
  const int ARRIVAL_NORTH_INTERVAL = 180; // 3 minutes
  const int ARRIVAL_SOUTH_INTERVAL = 120; // 2 minutes
  const int DEPARTURE_EAST_INTERVAL = 150; // 2.5 minutes
  const int DEPARTURE_WEST_INTERVAL = 240; // 4 minutes
  
- // Emergency probabilities
  const int NORTH_EMERGENCY_PROBABILITY = 10; // 10%
  const int SOUTH_EMERGENCY_PROBABILITY = 5;  // 5%
  const int EAST_EMERGENCY_PROBABILITY = 15;  // 15%
  const int WEST_EMERGENCY_PROBABILITY = 20;  // 20%
  
- // Speed rules for arrivals
  const int HOLDING_MIN_SPEED = 400;
  const int HOLDING_MAX_SPEED = 600;
  const int APPROACH_MIN_SPEED = 240;
@@ -107,45 +92,33 @@
  const int TAXI_MAX_SPEED = 30;
  const int GATE_MAX_SPEED = 5;
  
- // Speed rules for departures
  const int TAKEOFF_MAX_SPEED = 290;
  const int CLIMB_MIN_SPEED = 250;
  const int CLIMB_MAX_SPEED = 463;
  const int CRUISE_MIN_SPEED = 800;
  const int CRUISE_MAX_SPEED = 900; 
  
- // Fine amounts
- const int COMMERCIAL_FINE = 500000; // PKR
- const int CARGO_FINE = 700000; // PKR
- const float SERVICE_FEE_PERCENTAGE = 0.15; // 15%
+ const int COMMERCIAL_FINE = 500000; 
+ const int CARGO_FINE = 700000; 
+ const float SERVICE_FEE_PERCENTAGE = 0.15; 
  
- const int VIOLATION_PROBABILITY = 15; // 15% chance of a speed violation
- const int MAX_VIOLATION_SPEED_EXCESS = 40; // Max km/h over the limit
+ const int VIOLATION_PROBABILITY = 15; 
+ const int MAX_VIOLATION_SPEED_EXCESS = 40; 
  
- // -------- SHARED RESOURCES --------
- 
- // Mutex for console output
  mutex cout_mutex;
  
- // Mutexes for runway access
  mutex runway_a_mutex;
  mutex runway_b_mutex;
  mutex runway_c_mutex;
  
- // Mutex for AVN data
  mutex avn_mutex;
  
- // Random number generator
  random_device rd;
  mt19937 gen(rd());
  
- // -------- CLASS DEFINITIONS --------
- 
- // Forward declarations
  class Aircraft;
  class FlightScheduler;
  
- // Airspace Violation Notice (AVN)
  class AVN {
  public:
      int id;
@@ -168,23 +141,18 @@
            recordedSpeed(recordedSpeed), permissibleSpeedMin(permissibleSpeedMin), 
            permissibleSpeedMax(permissibleSpeedMax), status(PaymentStatus::UNPAID) {
          
-         // Set issue time to current time
          issueTime = time(nullptr);
          
-         // Set due date to 3 days from now
          dueDate = issueTime + (3 * 24 * 60 * 60);
          
-         // Calculate fine amount based on aircraft type
          if (type == FlightType::COMMERCIAL) {
              fineAmount = COMMERCIAL_FINE;
          } else {
              fineAmount = CARGO_FINE;
          }
          
-         // Calculate service fee
          serviceFee = fineAmount * SERVICE_FEE_PERCENTAGE;
          
-         // Calculate total amount
          totalAmount = fineAmount + serviceFee;
      }
  
@@ -232,7 +200,6 @@
      }
  };
  
- // Airline class
  class Airline {
  public:
      string name;
@@ -265,7 +232,6 @@
      }
  };
  
- // Aircraft class (base for both arrival and departure)
  class Aircraft {
  protected:
      static int nextId;
@@ -284,11 +250,8 @@
      chrono::system_clock::time_point actualTime;
      Runway assignedRunway;
      bool isEmergency;
-     // Add to Aircraft base class (around line 240) after the other member variables:
 
-// Track which states have already had violations
 std::set<string> violatedStates;
-// Add a new member variable to the Aircraft base class (around line 241)
 bool maintainViolationSpeed = false;
 int violationSpeed = 0;
 
@@ -349,13 +312,11 @@ int violationSpeed = 0;
  
  int Aircraft::nextId = 1000;
  
- // Arrival Flight class
  class ArrivalFlight : public Aircraft {
  private:
      ArrivalState state;
-     int stateTime; // Time spent in current state
+     int stateTime; 
      
-     // State transition times (in simulation seconds)
      const int HOLDING_TIME = 20;
      const int APPROACH_TIME = 15;
      const int LANDING_TIME = 10;
@@ -368,7 +329,6 @@ int violationSpeed = 0;
          : Aircraft(flightNumber, airline, type, direction, priority, scheduledTime),
            state(ArrivalState::HOLDING), stateTime(0) {
          
-         // Set initial speed based on state
          uniform_int_distribution<> holdingDist(HOLDING_MIN_SPEED, HOLDING_MAX_SPEED);
          currentSpeed = holdingDist(gen);
      }
@@ -388,21 +348,17 @@ int violationSpeed = 0;
          }
      }
      
-     // For ArrivalFlight::updateStatus (around line 398)
 
 void updateStatus(int simulationTime) override {
     stateTime++;
     
-    // Store previous state to detect state transitions
     ArrivalState previousState = state;
     
-    // Update speed and state based on current state and time spent in that state
     switch (state) {
         case ArrivalState::HOLDING:
             if (stateTime >= HOLDING_TIME && assignedRunway != Runway::NONE) {
                 state = ArrivalState::APPROACH;
                 stateTime = 0;
-                // Reset violation settings when changing state
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
@@ -416,7 +372,6 @@ void updateStatus(int simulationTime) override {
             if (stateTime >= APPROACH_TIME) {
                 state = ArrivalState::LANDING;
                 stateTime = 0;
-                // Reset violation settings when changing state
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
@@ -427,7 +382,6 @@ void updateStatus(int simulationTime) override {
             
         case ArrivalState::LANDING:
             if (!maintainViolationSpeed) {
-                // Gradually decrease speed during landing
                 currentSpeed = max(LANDING_END_SPEED, LANDING_START_SPEED - 
                                   (LANDING_START_SPEED - LANDING_END_SPEED) * stateTime / LANDING_TIME);
             }
@@ -435,7 +389,6 @@ void updateStatus(int simulationTime) override {
             if (stateTime >= LANDING_TIME) {
                 state = ArrivalState::TAXI;
                 stateTime = 0;
-                // Reset violation settings when changing state
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
@@ -449,7 +402,6 @@ void updateStatus(int simulationTime) override {
             if (stateTime >= TAXI_TIME) {
                 state = ArrivalState::AT_GATE;
                 stateTime = 0;
-                // Reset violation settings when changing state
                 maintainViolationSpeed = false;
                 currentSpeed = 0;
             }
@@ -461,21 +413,19 @@ void updateStatus(int simulationTime) override {
             break;
     }
     
-    // If state has changed, clear violation speed
     if (previousState != state) {
         maintainViolationSpeed = false;
     }
     
-    // Randomly introduce speed violations with a configurable probability
-    if (!hasActiveViolation && !isEmergency && !maintainViolationSpeed) {  // Don't give violations to emergency flights
+
+    if (!hasActiveViolation && !isEmergency && !maintainViolationSpeed) {  
         uniform_int_distribution<> violationChanceDist(1, 100);
         
-        // Only proceed with violation logic if the random check passes
-        // Make this a lower probability to ensure fewer aircraft get violations
+
         if (violationChanceDist(gen) <= VIOLATION_PROBABILITY / 3) {
             uniform_int_distribution<> violationDist(1, 100);
             if (violationDist(gen) <= VIOLATION_PROBABILITY) {
-                // Determine excess speed based on current state
+
                 int excessSpeed = 0;
                 uniform_int_distribution<> excessDist(5, MAX_VIOLATION_SPEED_EXCESS);
                 
@@ -497,7 +447,6 @@ void updateStatus(int simulationTime) override {
                     case ArrivalState::LANDING:
                         if (stateTime > LANDING_TIME / 2) {
                             excessSpeed = excessDist(gen);
-                            // Higher speed than should be at this point in landing
                             currentSpeed += excessSpeed;
                             maintainViolationSpeed = true;
                             violationSpeed = currentSpeed;
@@ -517,7 +466,6 @@ void updateStatus(int simulationTime) override {
             }
         }
     } else if (maintainViolationSpeed) {
-        // Maintain the violation speed until state changes
         currentSpeed = violationSpeed;
     }
     
@@ -525,13 +473,12 @@ void updateStatus(int simulationTime) override {
     checkViolation();
 }
      
-     // Modify the checkViolation method in ArrivalFlight class (around line 634)
 
 void checkViolation() override {
     // Get current state as a string
     string currentStateStr = getStateString();
     
-    // Skip violation check if we already had a violation in this state
+
     if (violatedStates.find(currentStateStr) != violatedStates.end()) {
         return;
     }
@@ -593,7 +540,7 @@ void checkViolation() override {
             currentSpeed, minSpeed, maxSpeed
         );
         
-        // Add this state to the set of states that have had violations
+
         violatedStates.insert(currentStateStr);
         
         lock_guard<mutex> lock(cout_mutex);
@@ -608,13 +555,11 @@ void checkViolation() override {
      }
  };
  
- // Departure Flight class
  class DepartureFlight : public Aircraft {
  private:
      DepartureState state;
-     int stateTime; // Time spent in current state
+     int stateTime; //time spent in current state
      
-     // State transition times (in simulation seconds)
      const int TAXI_TIME = 15;
      const int TAKEOFF_TIME = 10;
      const int CLIMB_TIME = 20;
@@ -626,7 +571,7 @@ void checkViolation() override {
          : Aircraft(flightNumber, airline, type, direction, priority, scheduledTime),
            state(DepartureState::AT_GATE), stateTime(0) {
          
-         // Initial speed at gate is 0
+         //speed at gate is 0
          currentSpeed = 0;
      }
      
@@ -645,21 +590,17 @@ void checkViolation() override {
          }
      }
      
-     // For DepartureFlight::updateStatus (around line 766)
 
 void updateStatus(int simulationTime) override {
     stateTime++;
     
-    // Store previous state to detect state transitions
     DepartureState previousState = state;
     
-    // Update speed and state based on current state and time spent in that state
     switch (state) {
         case DepartureState::AT_GATE:
             if (assignedRunway != Runway::NONE) {
                 state = DepartureState::TAXI;
                 stateTime = 0;
-                // Reset violation settings when changing state
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
@@ -675,18 +616,17 @@ void updateStatus(int simulationTime) override {
             if (stateTime >= TAXI_TIME) {
                 state = DepartureState::TAKEOFF_ROLL;
                 stateTime = 0;
-                // Reset violation settings when changing state
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
-                    currentSpeed = 0; // Start from standstill
+                    currentSpeed = 0; //tart from standstill
                 }
             }
             break;
             
         case DepartureState::TAKEOFF_ROLL:
             if (!maintainViolationSpeed) {
-                // Gradually increase speed during takeoff roll
+
                 currentSpeed = min(TAKEOFF_MAX_SPEED, 
                                  (TAKEOFF_MAX_SPEED * stateTime) / TAKEOFF_TIME);
             }
@@ -694,7 +634,7 @@ void updateStatus(int simulationTime) override {
             if (stateTime >= TAKEOFF_TIME) {
                 state = DepartureState::CLIMB;
                 stateTime = 0;
-                // Reset violation settings when changing state
+                //rset violation settings at state
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
@@ -708,7 +648,7 @@ void updateStatus(int simulationTime) override {
             if (stateTime >= CLIMB_TIME) {
                 state = DepartureState::CRUISE;
                 stateTime = 0;
-                // Reset violation settings when changing state
+
                 maintainViolationSpeed = false;
                 
                 if (!maintainViolationSpeed) {
@@ -719,31 +659,27 @@ void updateStatus(int simulationTime) override {
             break;
             
         case DepartureState::CRUISE:
-            // Maintain cruise speed
+            //maintaining cruise speed
             break;
     }
     
-    // If state has changed, clear violation speed
+    //after state changed clearing violation speed
     if (previousState != state) {
         maintainViolationSpeed = false;
     }
     
-    // Randomly introduce speed violations with a configurable probability
     if (!hasActiveViolation && !isEmergency && !maintainViolationSpeed) {  // Don't give violations to emergency flights
         uniform_int_distribution<> violationChanceDist(1, 100);
         
-        // Only proceed with violation logic if the random check passes
-        // Make this a lower probability to ensure fewer aircraft get violations
         if (violationChanceDist(gen) <= VIOLATION_PROBABILITY / 3) {
             uniform_int_distribution<> violationDist(1, 100);
             if (violationDist(gen) <= VIOLATION_PROBABILITY) {
-                // Determine excess speed based on current state
                 int excessSpeed = 0;
                 uniform_int_distribution<> excessDist(5, MAX_VIOLATION_SPEED_EXCESS);
                 
                 switch (state) {
                     case DepartureState::TAXI:
-                        excessSpeed = excessDist(gen) / 2; // Less excess for taxi speeds
+                        excessSpeed = excessDist(gen) / 2; 
                         currentSpeed = TAXI_MAX_SPEED + excessSpeed;
                         maintainViolationSpeed = true;
                         violationSpeed = currentSpeed;
@@ -751,7 +687,6 @@ void updateStatus(int simulationTime) override {
                         
                     case DepartureState::TAKEOFF_ROLL:
                         if (stateTime > TAKEOFF_TIME / 2) {
-                            // Only exceed speed when we're supposed to be at a moderate speed
                             excessSpeed = excessDist(gen);
                             currentSpeed = TAKEOFF_MAX_SPEED + excessSpeed;
                             maintainViolationSpeed = true;
@@ -785,7 +720,6 @@ void updateStatus(int simulationTime) override {
             }
         }
     } else if (maintainViolationSpeed) {
-        // Maintain the violation speed until state changes
         currentSpeed = violationSpeed;
     }
     
@@ -793,13 +727,12 @@ void updateStatus(int simulationTime) override {
     checkViolation();
 }
      
-     // Modify the checkViolation method in DepartureFlight class (around line 853)
 
 void checkViolation() override {
     // Get current state as a string
     string currentStateStr = getStateString();
     
-    // Skip violation check if we already had a violation in this state
+    //skiping violation check if violation in a state
     if (violatedStates.find(currentStateStr) != violatedStates.end()) {
         return;
     }
@@ -849,7 +782,6 @@ void checkViolation() override {
             break;
     }
     
-    // If there's a violation
     if (violation) {
         hasActiveViolation = true;
         
@@ -860,7 +792,6 @@ void checkViolation() override {
             currentSpeed, minSpeed, maxSpeed
         );
         
-        // Add this state to the set of states that have had violations
         violatedStates.insert(currentStateStr);
         
         lock_guard<mutex> lock(cout_mutex);
@@ -875,7 +806,6 @@ void checkViolation() override {
      }
  };
  
- // Flight Scheduler
  class FlightScheduler {
  private:
      vector<shared_ptr<Aircraft>> allFlights;
@@ -890,17 +820,14 @@ void checkViolation() override {
      int lastEastDeparture;
      int lastWestDeparture;
      
-     // Mutexes for runway access control
      mutex runwayAMutex;
      mutex runwayBMutex;
      mutex runwayCMutex;
      
-     // Runway availability flags
      bool runwayAAvailable;
      bool runwayBAvailable;
      bool runwayCAvailable;
      
-     // Priority queue comparator
      struct CompareAircraftPriority {
          bool operator()(const shared_ptr<Aircraft>& a, const shared_ptr<Aircraft>& b) {
              // First by priority (higher number = higher priority)
@@ -912,12 +839,10 @@ void checkViolation() override {
          }
      };
      
-     // Priority queues for runways
      priority_queue<shared_ptr<Aircraft>, vector<shared_ptr<Aircraft>>, CompareAircraftPriority> runwayAQueue;
      priority_queue<shared_ptr<Aircraft>, vector<shared_ptr<Aircraft>>, CompareAircraftPriority> runwayBQueue;
      priority_queue<shared_ptr<Aircraft>, vector<shared_ptr<Aircraft>>, CompareAircraftPriority> runwayCQueue;
      
-     // Runway occupancy
      shared_ptr<Aircraft> runwayAOccupant;
      shared_ptr<Aircraft> runwayBOccupant;
      shared_ptr<Aircraft> runwayCOccupant;
@@ -926,7 +851,7 @@ void checkViolation() override {
      int runwayBFreeTime;
      int runwayCFreeTime;
      
-     int avnWritePipe; // Pipe to communicate with AVN Generator
+     int avnWritePipe; //pipe to communicate with avn generator
      
  public:
      FlightScheduler(int avnPipe) : currentSimulationTime(0), 
@@ -947,16 +872,12 @@ void checkViolation() override {
      void updateSimulation() {
          currentSimulationTime++;
          
-         // Generate new flights
          generateFlights();
          
-         // Assign runways
          assignRunways();
          
-         // Update active flights
          updateFlights();
          
-         // Move completed flights
          moveCompletedFlights();
      }
      
@@ -969,7 +890,7 @@ void checkViolation() override {
          if (currentSimulationTime - lastNorthArrival >= ARRIVAL_NORTH_INTERVAL || currentSimulationTime == 1) {
              lastNorthArrival = currentSimulationTime;
              
-             // Determine if this is an emergency
+             //determineing if this is an emergency
              uniform_int_distribution<> emergencyDist(1, 100);
              bool isEmergency = (emergencyDist(gen) <= NORTH_EMERGENCY_PROBABILITY);
              
@@ -984,7 +905,6 @@ void checkViolation() override {
              uniform_int_distribution<> airlineDist(0, airlineNames.size() - 1);
              string airline = airlineNames[airlineDist(gen)];
              
-             // Determine flight type
              FlightType type = FlightType::COMMERCIAL;
              if (airline == "FedEx" || airline == "Blue Dart") {
                  type = FlightType::CARGO;
@@ -993,15 +913,13 @@ void checkViolation() override {
                  type = FlightType::EMERGENCY;
              }
              
-             // Create flight number
              stringstream ssFlightNum;
              ssFlightNum << airline.substr(0, 2) << "-" << (1000 + allFlights.size());
              string flightNumber = ssFlightNum.str();
              
-             // Set priority (emergency = 3, cargo = 2, commercial = 1)
+             //priority emergency = 3, cargo = 2, commercial = 1
              int priority = (isEmergency) ? 3 : ((type == FlightType::CARGO) ? 2 : 1);
              
-             // Create arrival flight
              auto flight = make_shared<ArrivalFlight>(
                  flightNumber, airline, type, Direction::NORTH, priority,
                  chrono::system_clock::now()
@@ -1011,7 +929,6 @@ void checkViolation() override {
              allFlights.push_back(flight);
              activeFlights.push_back(flight);
              
-             // Add to runway A queue (north arrivals)
              runwayAQueue.push(flight);
              
              lock_guard<mutex> lock(cout_mutex);
@@ -1022,11 +939,9 @@ void checkViolation() override {
          if (currentSimulationTime - lastSouthArrival >= ARRIVAL_SOUTH_INTERVAL || currentSimulationTime == 2) {
              lastSouthArrival = currentSimulationTime;
              
-             // Determine if this is an emergency
              uniform_int_distribution<> emergencyDist(1, 100);
              bool isEmergency = (emergencyDist(gen) <= SOUTH_EMERGENCY_PROBABILITY);
              
-             // Select airline randomly
              vector<string> airlineNames;
              for (const auto& pair : airlines) {
                  if (pair.second->activeFlights > 0) {
@@ -1046,15 +961,12 @@ void checkViolation() override {
                  type = FlightType::EMERGENCY;
              }
              
-             // Create flight number
              stringstream ssFlightNum;
              ssFlightNum << airline.substr(0, 2) << "-" << (1000 + allFlights.size());
              string flightNumber = ssFlightNum.str();
              
-             // Set priority (emergency = 3, cargo = 2, commercial = 1)
              int priority = (isEmergency) ? 3 : ((type == FlightType::CARGO) ? 2 : 1);
                          
-             // Create arrival flight
              auto flight = make_shared<ArrivalFlight>(
                  flightNumber, airline, type, Direction::SOUTH, priority,
                  chrono::system_clock::now()
@@ -1064,22 +976,18 @@ void checkViolation() override {
              allFlights.push_back(flight);
              activeFlights.push_back(flight);
              
-             // Add to runway A queue (south arrivals)
              runwayAQueue.push(flight);
              
              lock_guard<mutex> lock(cout_mutex);
              cout << "\nNew South Arrival: " << flight->getSummary() << endl;
          }
          
-         // East departures (every 2.5 minutes)
          if (currentSimulationTime - lastEastDeparture >= DEPARTURE_EAST_INTERVAL || currentSimulationTime == 3) {
              lastEastDeparture = currentSimulationTime;
              
-             // Determine if this is an emergency
              uniform_int_distribution<> emergencyDist(1, 100);
              bool isEmergency = (emergencyDist(gen) <= EAST_EMERGENCY_PROBABILITY);
              
-             // Select airline randomly
              vector<string> airlineNames;
              for (const auto& pair : airlines) {
                  if (pair.second->activeFlights > 0) {
@@ -1099,15 +1007,12 @@ void checkViolation() override {
                  type = FlightType::EMERGENCY;
              }
              
-             // Create flight number
              stringstream ssFlightNum;
              ssFlightNum << airline.substr(0, 2) << "-" << (2000 + allFlights.size());
              string flightNumber = ssFlightNum.str();
              
-             // Set priority (emergency = 3, cargo = 2, commercial = 1)
              int priority = (isEmergency) ? 3 : ((type == FlightType::CARGO) ? 2 : 1);
              
-             // Create departure flight
              auto flight = make_shared<DepartureFlight>(
                  flightNumber, airline, type, Direction::EAST, priority,
                  chrono::system_clock::now()
@@ -1117,22 +1022,18 @@ void checkViolation() override {
              allFlights.push_back(flight);
              activeFlights.push_back(flight);
              
-             // Add to runway B queue (east departures)
              runwayBQueue.push(flight);
              
              lock_guard<mutex> lock(cout_mutex);
              cout << "\nNew East Departure: " << flight->getSummary() << endl;
          }
          
-         // West departures (every 4 minutes)
          if (currentSimulationTime - lastWestDeparture >= DEPARTURE_WEST_INTERVAL || currentSimulationTime == 4) {
              lastWestDeparture = currentSimulationTime;
              
-             // Determine if this is an emergency
              uniform_int_distribution<> emergencyDist(1, 100);
              bool isEmergency = (emergencyDist(gen) <= WEST_EMERGENCY_PROBABILITY);
              
-             // Select airline randomly
              vector<string> airlineNames;
              for (const auto& pair : airlines) {
                  if (pair.second->activeFlights > 0) {
@@ -1152,15 +1053,12 @@ void checkViolation() override {
                  type = FlightType::EMERGENCY;
              }
              
-             // Create flight number
              stringstream ssFlightNum;
              ssFlightNum << airline.substr(0, 2) << "-" << (2000 + allFlights.size());
              string flightNumber = ssFlightNum.str();
              
-             // Set priority (emergency = 3, cargo = 2, commercial = 1)
              int priority = (isEmergency) ? 3 : ((type == FlightType::CARGO) ? 2 : 1);
              
-             // Create departure flight
              auto flight = make_shared<DepartureFlight>(
                  flightNumber, airline, type, Direction::WEST, priority,
                  chrono::system_clock::now()
@@ -1170,7 +1068,6 @@ void checkViolation() override {
              allFlights.push_back(flight);
              activeFlights.push_back(flight);
              
-             // Add to runway B queue (west departures)
              runwayBQueue.push(flight);
              
              lock_guard<mutex> lock(cout_mutex);
@@ -1179,17 +1076,14 @@ void checkViolation() override {
      }
      
      void assignRunways() {
-         // Temporary queues to hold unassigned flights
          priority_queue<shared_ptr<Aircraft>, vector<shared_ptr<Aircraft>>, CompareAircraftPriority> tempAQueue;
          priority_queue<shared_ptr<Aircraft>, vector<shared_ptr<Aircraft>>, CompareAircraftPriority> tempBQueue;
          priority_queue<shared_ptr<Aircraft>, vector<shared_ptr<Aircraft>>, CompareAircraftPriority> tempCQueue;
      
-         // Process runway A queue (North/South arrivals)
          while (!runwayAQueue.empty()) {
              shared_ptr<Aircraft> aircraft = runwayAQueue.top();
              runwayAQueue.pop();
      
-             // Skip if already assigned a runway
              if (aircraft->assignedRunway != Runway::NONE) {
                  tempAQueue.push(aircraft);
                  continue;
@@ -1197,7 +1091,6 @@ void checkViolation() override {
      
              bool assigned = false;
      
-             // Try RWY-C for emergency or cargo flights
              if (aircraft->type == FlightType::EMERGENCY || aircraft->type == FlightType::CARGO) {
                  lock_guard<mutex> lock(runwayCMutex);
                  if (runwayCAvailable && currentSimulationTime >= runwayCFreeTime) {
@@ -1210,7 +1103,6 @@ void checkViolation() override {
                  }
              }
      
-             // Try RWY-A for North/South arrivals
              if (!assigned && (aircraft->direction == Direction::NORTH || aircraft->direction == Direction::SOUTH)) {
                  lock_guard<mutex> lock(runwayAMutex);
                  if (runwayAAvailable && currentSimulationTime >= runwayAFreeTime) {
@@ -1223,7 +1115,6 @@ void checkViolation() override {
                  }
              }
      
-             // Try RWY-C as fallback for non-cargo flights
              if (!assigned && aircraft->type != FlightType::CARGO) {
                  lock_guard<mutex> lock(runwayCMutex);
                  if (runwayCAvailable && currentSimulationTime >= runwayCFreeTime) {
@@ -1236,18 +1127,15 @@ void checkViolation() override {
                  }
              }
      
-             // If not assigned, re-queue
              if (!assigned) {
                  tempAQueue.push(aircraft);
              }
          }
      
-         // Process runway B queue (East/West departures)
          while (!runwayBQueue.empty()) {
              shared_ptr<Aircraft> aircraft = runwayBQueue.top();
              runwayBQueue.pop();
      
-             // Skip if already assigned a runway
              if (aircraft->assignedRunway != Runway::NONE) {
                  tempBQueue.push(aircraft);
                  continue;
@@ -1255,7 +1143,6 @@ void checkViolation() override {
      
              bool assigned = false;
      
-             // Try RWY-C for emergency or cargo flights
              if (aircraft->type == FlightType::EMERGENCY || aircraft->type == FlightType::CARGO) {
                  lock_guard<mutex> lock(runwayCMutex);
                  if (runwayCAvailable && currentSimulationTime >= runwayCFreeTime) {
@@ -1268,7 +1155,6 @@ void checkViolation() override {
                  }
              }
      
-             // Try RWY-B for East/West departures
              if (!assigned && (aircraft->direction == Direction::EAST || aircraft->direction == Direction::WEST)) {
                  lock_guard<mutex> lock(runwayBMutex);
                  if (runwayBAvailable && currentSimulationTime >= runwayBFreeTime) {
@@ -1281,7 +1167,6 @@ void checkViolation() override {
                  }
              }
      
-             // Try RWY-C as fallback for non-cargo flights
              if (!assigned && aircraft->type != FlightType::CARGO) {
                  lock_guard<mutex> lock(runwayCMutex);
                  if (runwayCAvailable && currentSimulationTime >= runwayCFreeTime) {
@@ -1294,7 +1179,6 @@ void checkViolation() override {
                  }
              }
      
-             // If not assigned, re-queue
              if (!assigned) {
                  tempBQueue.push(aircraft);
              }
@@ -1305,7 +1189,6 @@ void checkViolation() override {
              shared_ptr<Aircraft> aircraft = runwayCQueue.top();
              runwayCQueue.pop();
      
-             // Skip if already assigned a runway
              if (aircraft->assignedRunway != Runway::NONE) {
                  tempCQueue.push(aircraft);
                  continue;
@@ -1313,7 +1196,6 @@ void checkViolation() override {
      
              bool assigned = false;
      
-             // Try RWY-C for all flights in this queue
              lock_guard<mutex> lock(runwayCMutex);
              if (runwayCAvailable && currentSimulationTime >= runwayCFreeTime) {
                  runwayCAvailable = false;
@@ -1324,23 +1206,19 @@ void checkViolation() override {
                  cout << "Assigned RWY-C to " << aircraft->flightNumber << " (" << aircraft->airline << ")" << endl;
              }
      
-             // If not assigned, re-queue
              if (!assigned) {
                  tempCQueue.push(aircraft);
              }
          }
      
-         // Restore unassigned flights to queues
          runwayAQueue = tempAQueue;
          runwayBQueue = tempBQueue;
          runwayCQueue = tempCQueue;
      
-         // Check for runway release
          for (auto& flight : activeFlights) {
              if (flight->assignedRunway != Runway::NONE) {
                  bool releaseRunway = false;
      
-                 // Check arrival flights
                  if (auto arrival = dynamic_pointer_cast<ArrivalFlight>(flight)) {
                      if (arrival->getState() == ArrivalState::TAXI || 
                          arrival->getState() == ArrivalState::AT_GATE) {
@@ -1348,7 +1226,6 @@ void checkViolation() override {
                      }
                  }
      
-                 // Check departure flights
                  if (auto departure = dynamic_pointer_cast<DepartureFlight>(flight)) {
                      if (departure->getState() == DepartureState::CLIMB || 
                          departure->getState() == DepartureState::CRUISE) {
@@ -1391,17 +1268,13 @@ void checkViolation() override {
          for (auto& flight : activeFlights) {
              flight->updateStatus(currentSimulationTime);
              
-             // Check if flight has active violation
              if (flight->hasActiveViolation && flight->currentViolation) {
-                 // Add violation to airline's record
                  auto airlineIt = airlines.find(flight->airline);
                  if (airlineIt != airlines.end()) {
                      airlineIt->second->addViolation(flight->currentViolation);
                      
-                     // Add to the global list of AVNs
                      allAVNs.push_back(flight->currentViolation);
                      
-                     // Notify AVN Generator with a new IPC message
                      IPCMessage message;
                      message.type = MessageType::AVN_CREATED;
                      message.avnId = flight->currentViolation->id;
@@ -1409,7 +1282,7 @@ void checkViolation() override {
                      message.airline[sizeof(message.airline) - 1] = '\0';
                      strncpy(message.flightNumber, flight->flightNumber.c_str(), sizeof(message.flightNumber) - 1);
                      message.flightNumber[sizeof(message.flightNumber) - 1] = '\0';
-                     message.amount = flight->currentSpeed;  // Send current speed as amount
+                     message.amount = flight->currentSpeed;  
                      message.minSpeed = flight->currentViolation->permissibleSpeedMin;
                      message.maxSpeed = flight->currentViolation->permissibleSpeedMax;
                      strncpy(message.details, (flight->type == FlightType::COMMERCIAL) ? "COMMERCIAL" : "CARGO", sizeof(message.details) - 1);
@@ -1417,7 +1290,6 @@ void checkViolation() override {
                      
                      write(avnWritePipe, &message, sizeof(message));
                      
-                     // Reset violation flag and clear current violation
                      flight->hasActiveViolation = false;
                      flight->currentViolation.reset();
                  }
@@ -1440,7 +1312,6 @@ void checkViolation() override {
              }
          }
          
-         // Update active flights list
          activeFlights = stillActive;
      }
      
@@ -1452,24 +1323,20 @@ void checkViolation() override {
          cout << "Active Flights: " << activeFlights.size() << endl;
          cout << "Completed Flights: " << completedFlights.size() << endl;
          
-         // Runway status
          cout << "\n--- RUNWAY STATUS ---" << endl;
          cout << "Runway A: " << (runwayAOccupant ? runwayAOccupant->flightNumber + " (" + runwayAOccupant->airline + ")" : "Free") << endl;
          cout << "Runway B: " << (runwayBOccupant ? runwayBOccupant->flightNumber + " (" + runwayBOccupant->airline + ")" : "Free") << endl;
          cout << "Runway C: " << (runwayCOccupant ? runwayCOccupant->flightNumber + " (" + runwayCOccupant->airline + ")" : "Free") << endl;
          
-         // Queue status
          cout << "\n--- QUEUE STATUS ---" << endl;
          cout << "Runway A Queue: " << runwayAQueue.size() << " flights waiting" << endl;
          cout << "Runway B Queue: " << runwayBQueue.size() << " flights waiting" << endl;
          
-         // Active flights
          cout << "\n--- ACTIVE FLIGHTS ---" << endl;
          for (const auto& flight : activeFlights) {
              cout << flight->getSummary() << endl;
          }
          
-         // Active violations
         //  cout << "\n--- ACTIVE VIOLATIONS ---" << endl;
         //  bool hasViolations = false;
         //  for (const auto& flight : activeFlights) {
@@ -1555,9 +1422,10 @@ void checkViolation() override {
      const map<string, shared_ptr<Airline>>& getAirlines() const {
          return airlines;
      }
+     
+     const std::vector<std::shared_ptr<Aircraft>>& getActiveFlights() const { return activeFlights; }
  };
  
- // AVN Generator Process
  class AVNGenerator {
  private:
      vector<shared_ptr<AVN>> avns;
@@ -1571,12 +1439,10 @@ void checkViolation() override {
      
      void run() {
          while (true) {
-             // Read messages from pipe
              IPCMessage message;
              ssize_t bytesRead = read(readPipe, &message, sizeof(message));
              
              if (bytesRead <= 0) {
-                 // Error or pipe closed
                  break;
              }
              
@@ -1587,25 +1453,21 @@ void checkViolation() override {
      void processMessage(const IPCMessage& message) {
          switch (message.type) {
              case MessageType::AVN_CREATED: {
-                 // Create a new AVN based on the message
                  FlightType flightType = (strncmp(message.details, "COMMERCIAL", sizeof(message.details)) == 0) ? 
                                         FlightType::COMMERCIAL : FlightType::CARGO;
                  
-                 // Create a new AVN with proper speed information
                  auto newAVN = make_shared<AVN>(
                      nextAVNId++,
                      string(message.airline),
                      string(message.flightNumber),
                      flightType,
-                     static_cast<int>(message.amount),  // Recorded speed
-                     message.minSpeed,  // Permissible min speed
-                     message.maxSpeed   // Permissible max speed
+                     static_cast<int>(message.amount),  
+                     message.minSpeed,  
+                     message.maxSpeed   
                  );
                  
-                 // Store the AVN
                  avns.push_back(newAVN);
                  
-                 // Send notification to Airline Portal
                  IPCMessage response;
                  response.type = MessageType::AVN_CREATED;
                  response.avnId = newAVN->id;
@@ -1627,12 +1489,10 @@ void checkViolation() override {
              }
                  
              case MessageType::PAYMENT_CONFIRMATION: {
-                 // Find the AVN and update its status
                  for (auto& avn : avns) {
                      if (avn->id == message.avnId) {
                          avn->status = PaymentStatus::PAID;
                          
-                         // Send confirmation to Airline Portal
                          IPCMessage response;
                          response.type = MessageType::PAYMENT_CONFIRMATION;
                          response.avnId = avn->id;
@@ -1652,7 +1512,6 @@ void checkViolation() override {
              }
                  
              case MessageType::QUERY_AVN: {
-                 // Find the AVN and send its details
                  for (const auto& avn : avns) {
                      if (avn->id == message.avnId) {
                          IPCMessage response;
@@ -1674,7 +1533,6 @@ void checkViolation() override {
              }
                  
              case MessageType::QUERY_AIRLINE: {
-                 // Find all AVNs for the airline
                  stringstream ss;
                  int count = 0;
                  
@@ -1708,7 +1566,6 @@ void checkViolation() override {
      }
  };
  
- // Airline Portal Process
  class AirlinePortal {
  private:
      int readPipe;
@@ -1749,7 +1606,6 @@ void checkViolation() override {
                      break;
              }
              
-             // Process any incoming messages
              processIncomingMessages();
          }
      }
@@ -1770,7 +1626,6 @@ void checkViolation() override {
          cout << "Enter airline name: ";
          cin >> airline;
          
-         // Request AVNs for the airline
          IPCMessage request;
          request.type = MessageType::QUERY_AIRLINE;
          strncpy(request.airline, airline.c_str(), sizeof(request.airline) - 1);
@@ -1778,7 +1633,6 @@ void checkViolation() override {
          
          write(writePipe, &request, sizeof(request));
          
-         // Wait for response
          sleep(1);
          processIncomingMessages();
      }
@@ -1789,24 +1643,20 @@ void checkViolation() override {
          cout << "Enter AVN ID to pay: ";
          cin >> avnId;
          
-         // Query AVN details first
          IPCMessage request;
          request.type = MessageType::QUERY_AVN;
          request.avnId = avnId;
          
          write(writePipe, &request, sizeof(request));
          
-         // Wait for response
          sleep(1);
          processIncomingMessages();
          
-         // Now request payment
          double amount;
          lock_guard<mutex> lock2(cout_mutex);
          cout << "Enter payment amount (PKR): ";
          cin >> amount;
          
-         // Send payment request to StripePay
          IPCMessage paymentRequest;
          paymentRequest.type = MessageType::PAYMENT_REQUEST;
          paymentRequest.avnId = avnId;
@@ -1824,27 +1674,25 @@ void checkViolation() override {
          cout << "Enter AVN ID: ";
          cin >> avnId;
          
-         // Request AVN details
          IPCMessage request;
          request.type = MessageType::QUERY_AVN;
          request.avnId = avnId;
          
          write(writePipe, &request, sizeof(request));
          
-         // Wait for response
          sleep(1);
          processIncomingMessages();
      }
      
      void processIncomingMessages() {
-         // Check if there are messages to read
+         //check if there are messages to read
          fd_set readSet;
          FD_ZERO(&readSet);
          FD_SET(readPipe, &readSet);
          
          struct timeval timeout;
          timeout.tv_sec = 0;
-         timeout.tv_usec = 100000; // 100ms timeout
+         timeout.tv_usec = 100000; //100ms timeout
          
          while (select(readPipe + 1, &readSet, NULL, NULL, &timeout) > 0) {
              IPCMessage message;
@@ -1890,7 +1738,7 @@ void checkViolation() override {
                      break;
              }
              
-             // Check if there are more messages
+             //check if there are more messages
              FD_ZERO(&readSet);
              FD_SET(readPipe, &readSet);
              timeout.tv_sec = 0;
@@ -1899,7 +1747,6 @@ void checkViolation() override {
      }
  };
  
- // StripePay Process
  class StripePay {
  private:
      int readPipe;
@@ -1910,12 +1757,11 @@ void checkViolation() override {
      
      void run() {
          while (true) {
-             // Read payment requests
+             //read payment requests
              IPCMessage message;
              ssize_t bytesRead = read(readPipe, &message, sizeof(message));
              
              if (bytesRead <= 0) {
-                 // Error or pipe closed
                  break;
              }
              
@@ -1930,10 +1776,8 @@ void checkViolation() override {
          cout << "[StripePay] Processing payment for AVN #" << request.avnId 
               << " - PKR " << fixed << setprecision(2) << request.amount << endl;
          
-         // Simulate payment processing
          sleep(2);
          
-         // Send confirmation
          IPCMessage confirmation;
          confirmation.type = MessageType::PAYMENT_CONFIRMATION;
          confirmation.avnId = request.avnId;
@@ -1947,16 +1791,336 @@ void checkViolation() override {
      }
  };
  
- // Main function
- // Fix the main function to properly manage simulation vs airline portal modes
+ class AirportGraphics {
+ private:
+     sf::RenderWindow window;
+     sf::Font font;
+     bool graphicsEnabled;
+     std::vector<sf::RectangleShape> runways;
+     std::vector<sf::Text> runwayLabels;
+     sf::CircleShape aircraftShape;
+     std::map<std::string, sf::CircleShape> aircraftShapes;
+     std::map<std::string, sf::Text> aircraftLabels;
+     sf::Text timerText;
+     sf::Text statusText;
+     sf::Text runwayStatusText;
+     sf::Text queueStatusText;
+     sf::Text activeFlightsText;
+     sf::Text avnStatusText;
+     int simulationTime;
+
+     static constexpr int WINDOW_WIDTH = 800;
+     static constexpr int WINDOW_HEIGHT = 600;
+     static constexpr float RUNWAY_WIDTH = 20.0f;
+     static constexpr float RUNWAY_LENGTH = 600.0f;
+     static constexpr float AIRCRAFT_RADIUS = 10.0f;
+     static constexpr float RUNWAY_SPACING = 100.0f;
+     static constexpr float LEFT_MARGIN = 200.0f;  // Space for text on the left
+
+ public:
+     AirportGraphics() : graphicsEnabled(false), simulationTime(0) {
+         try {
+             const char* display = getenv("DISPLAY");
+             if (!display) {
+                 std::cerr << "No display available. Running in console mode only." << std::endl;
+                 return;
+             }
+             std::cout << "Using display: " << display << std::endl;
+             sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
+             std::cout << "Desktop mode: " << desktop.width << "x" << desktop.height << std::endl;
+             std::cout << "Attempting to create window with size: " << WINDOW_WIDTH << "x" << WINDOW_HEIGHT << std::endl;
+             if (!sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT).isValid()) {
+                 std::cerr << "Requested video mode is not supported. Running in console mode only." << std::endl;
+                 return;
+             }
+             window.create(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Air Traffic Control Simulation");
+             if (!window.isOpen()) {
+                 std::cerr << "Failed to create graphics window. Running in console mode only." << std::endl;
+                 return;
+             }
+             std::cout << "Window created successfully at position: " 
+                       << window.getPosition().x << "," << window.getPosition().y << std::endl;
+             if (!font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")) {
+                 std::cerr << "Failed to load font. Running in console mode only." << std::endl;
+                 window.close();
+                 return;
+             }
+             std::cout << "Font loaded successfully." << std::endl;
+             initializeRunways();
+             std::cout << "Runways initialized successfully." << std::endl;
+             initializeTextElements();
+             graphicsEnabled = true;
+             std::cout << "Graphics initialized successfully. Window should be visible now." << std::endl;
+             window.setPosition(sf::Vector2i(
+                 (desktop.width - WINDOW_WIDTH) / 2,
+                 (desktop.height - WINDOW_HEIGHT) / 2
+             ));
+             window.setFramerateLimit(60);
+             std::cout << "Window positioned at center of screen." << std::endl;
+         } catch (const std::exception& e) {
+             std::cerr << "Error initializing graphics: " << e.what() << std::endl;
+             std::cerr << "Running in console mode only." << std::endl;
+             if (window.isOpen()) {
+                 window.close();
+             }
+         }
+     }
+     void update(const std::vector<std::shared_ptr<Aircraft>>& flights, int currentTime) {
+         if (!graphicsEnabled) {
+             return;
+         }
+         try {
+             simulationTime = currentTime;
+             window.clear(sf::Color::White);
+             int minutes = simulationTime / 60;
+             int seconds = simulationTime % 60;
+             std::stringstream ss;
+             ss << "Time: " << std::setfill('0') << std::setw(2) << minutes << ":"
+                << std::setfill('0') << std::setw(2) << seconds;
+             timerText.setString(ss.str());
+             std::stringstream statusSS;
+             statusSS << "AIRCONTROLX STATUS\n\n"
+                     << "Active Flights: " << flights.size() << "\n"
+                     << "Completed Flights: 0\n";
+             statusText.setString(statusSS.str());
+             std::stringstream runwaySS;
+             runwaySS << "RUNWAY STATUS\n\n";
+             for (const auto& flight : flights) {
+                 if (flight->assignedRunway != Runway::NONE) {
+                     runwaySS << "Runway " << flight->getRunwayString() << ": "
+                             << flight->flightNumber << " (" << flight->airline << ")\n";
+                 }
+             }
+             runwayStatusText.setString(runwaySS.str());
+             std::stringstream queueSS;
+             queueSS << "QUEUE STATUS\n\n";
+             int runwayAQueueSize = 0;
+             int runwayBQueueSize = 0;
+             int runwayCQueueSize = 0;
+             for (const auto& flight : flights) {
+                 if (flight->assignedRunway == Runway::NONE) {
+                     if (flight->direction == Direction::NORTH || flight->direction == Direction::SOUTH) {
+                         runwayAQueueSize++;
+                     } else if (flight->direction == Direction::EAST || flight->direction == Direction::WEST) {
+                         runwayBQueueSize++;
+                     } else {
+                         runwayCQueueSize++;
+                     }
+                 }
+             }
+             queueSS << "Runway A Queue: " << runwayAQueueSize << " flights waiting\n"
+                    << "Runway B Queue: " << runwayBQueueSize << " flights waiting\n"
+                    << "Runway C Queue: " << runwayCQueueSize << " flights waiting\n";
+             queueStatusText.setString(queueSS.str());
+             std::stringstream flightsSS;
+             flightsSS << "ACTIVE FLIGHTS\n\n";
+             for (const auto& flight : flights) {
+                 flightsSS << flight->getSummary() << "\n";
+             }
+             activeFlightsText.setString(flightsSS.str());
+             std::stringstream avnSS;
+             avnSS << "ACTIVE VIOLATIONS\n\n";
+             bool hasViolations = false;
+             for (const auto& flight : flights) {
+                 if (flight->hasActiveViolation && flight->currentViolation) {
+                     hasViolations = true;
+                     avnSS << "Flight " << flight->flightNumber << " (" << flight->airline << ")\n"
+                           << "Speed: " << flight->currentSpeed << " km/h\n"
+                           << "State: " << flight->getStateString() << "\n"
+                           << "AVN ID: " << flight->currentViolation->id << "\n"
+                           << "Fine: PKR " << std::fixed << std::setprecision(2) 
+                           << flight->currentViolation->totalAmount << "\n\n";
+                 }
+             }
+             if (!hasViolations) {
+                 avnSS << "No active violations.\n";
+             }
+             avnStatusText.setString(avnSS.str());
+             window.draw(timerText);
+             window.draw(statusText);
+             window.draw(runwayStatusText);
+             window.draw(queueStatusText);
+             window.draw(activeFlightsText);
+             window.draw(avnStatusText);
+             for (size_t i = 0; i < runways.size(); ++i) {
+                 window.draw(runways[i]);
+                 window.draw(runwayLabels[i]);
+             }
+             for (const auto& flight : flights) {
+                 updateAircraftPosition(flight);
+             }
+             window.display();
+         } catch (const std::exception& e) {
+             std::cerr << "Error updating graphics: " << e.what() << std::endl;
+             graphicsEnabled = false;
+             window.close();
+         }
+     }
+     bool isOpen() const {
+         return graphicsEnabled && window.isOpen();
+     }
+     void handleEvents() {
+         if (!graphicsEnabled) {
+             return;
+         }
+         try {
+             sf::Event event;
+             while (window.pollEvent(event)) {
+                 if (event.type == sf::Event::Closed) {
+                     window.close();
+                     graphicsEnabled = false;
+                 }
+             }
+         } catch (const std::exception& e) {
+             std::cerr << "Error handling events: " << e.what() << std::endl;
+             graphicsEnabled = false;
+             window.close();
+         }
+     }
+ private:
+     void initializeTextElements() {
+         timerText.setFont(font);
+         timerText.setCharacterSize(24);
+         timerText.setFillColor(sf::Color::Black);
+         timerText.setPosition(10, 10);
+         statusText.setFont(font);
+         statusText.setCharacterSize(16);
+         statusText.setFillColor(sf::Color::Black);
+         statusText.setPosition(10, 50);
+         runwayStatusText.setFont(font);
+         runwayStatusText.setCharacterSize(16);
+         runwayStatusText.setFillColor(sf::Color::Black);
+         runwayStatusText.setPosition(10, 150);
+         queueStatusText.setFont(font);
+         queueStatusText.setCharacterSize(16);
+         queueStatusText.setFillColor(sf::Color::Black);
+         queueStatusText.setPosition(10, 250);
+         activeFlightsText.setFont(font);
+         activeFlightsText.setCharacterSize(16);
+         activeFlightsText.setFillColor(sf::Color::Black);
+         activeFlightsText.setPosition(10, 350);
+         avnStatusText.setFont(font);
+         avnStatusText.setCharacterSize(16);
+         avnStatusText.setFillColor(sf::Color::Red);
+         avnStatusText.setPosition(10, 450);
+     }
+     void initializeRunways() {
+         std::vector<std::string> runwayNames = {"RWY-A", "RWY-B", "RWY-C"};
+         for (size_t i = 0; i < 3; ++i) {
+             sf::RectangleShape runway;
+             runway.setSize(sf::Vector2f(RUNWAY_LENGTH, RUNWAY_WIDTH));
+             runway.setPosition(
+                 LEFT_MARGIN,
+                 (WINDOW_HEIGHT - (3 * RUNWAY_SPACING)) / 2 + (i * RUNWAY_SPACING)
+             );
+             runway.setFillColor(sf::Color(100, 100, 100));
+             runways.push_back(runway);
+             sf::Text label;
+             label.setFont(font);
+             label.setString(runwayNames[i]);
+             label.setCharacterSize(16);
+             label.setFillColor(sf::Color::Black);
+             label.setPosition(
+                 LEFT_MARGIN - 60,
+                 (WINDOW_HEIGHT - (3 * RUNWAY_SPACING)) / 2 + (i * RUNWAY_SPACING) + (RUNWAY_WIDTH / 2) - 10
+             );
+             runwayLabels.push_back(label);
+         }
+     }
+     void updateAircraftPosition(const std::shared_ptr<Aircraft>& aircraft) {
+         std::string id = aircraft->flightNumber;
+         if (aircraftShapes.find(id) == aircraftShapes.end()) {
+             sf::CircleShape shape(AIRCRAFT_RADIUS);
+             shape.setFillColor(getAircraftColor(aircraft));
+             aircraftShapes[id] = shape;
+             sf::Text label;
+             label.setFont(font);
+             label.setString(id);
+             label.setCharacterSize(12);
+             label.setFillColor(sf::Color::Black);
+             aircraftLabels[id] = label;
+         }
+         float x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2;
+         float y = (WINDOW_HEIGHT - (3 * RUNWAY_SPACING)) / 2;
+         if (aircraft->assignedRunway != Runway::NONE) {
+             int runwayIndex = static_cast<int>(aircraft->assignedRunway);
+             y += (runwayIndex * RUNWAY_SPACING) + (RUNWAY_WIDTH / 2);
+             if (auto arrival = dynamic_pointer_cast<ArrivalFlight>(aircraft)) {
+                 switch (arrival->getState()) {
+                     case ArrivalState::HOLDING:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 - 100;
+                         break;
+                     case ArrivalState::APPROACH:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 100;
+                         break;
+                     case ArrivalState::LANDING:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 300;
+                         break;
+                     case ArrivalState::TAXI:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 500;
+                         break;
+                     case ArrivalState::AT_GATE:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 600;
+                         break;
+                 }
+             } else if (auto departure = dynamic_pointer_cast<DepartureFlight>(aircraft)) {
+                 switch (departure->getState()) {
+                     case DepartureState::AT_GATE:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 600;
+                         break;
+                     case DepartureState::TAXI:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 500;
+                         break;
+                     case DepartureState::TAKEOFF_ROLL:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 300;
+                         break;
+                     case DepartureState::CLIMB:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 + 100;
+                         break;
+                     case DepartureState::CRUISE:
+                         x = (WINDOW_WIDTH - RUNWAY_LENGTH) / 2 - 100;
+                         break;
+                 }
+             }
+         }
+         aircraftShapes[id].setPosition(x - AIRCRAFT_RADIUS, y - AIRCRAFT_RADIUS);
+         aircraftLabels[id].setPosition(x - AIRCRAFT_RADIUS, y - AIRCRAFT_RADIUS - 20);
+         window.draw(aircraftShapes[id]);
+         window.draw(aircraftLabels[id]);
+     }
+     sf::Color getAircraftColor(const std::shared_ptr<Aircraft>& aircraft) {
+         if (aircraft->isEmergency) {
+             return sf::Color::Red;
+         } else if (aircraft->type == FlightType::CARGO) {
+             return sf::Color::Blue;
+         } else {
+             return sf::Color::Green;
+         }
+     }
+ };
+ 
+ // Global simulation time and scheduler
+ std::atomic<int> simulationTime{0};
+ FlightScheduler* globalScheduler = nullptr;
+ bool simulationRunning = true;
+ std::atomic<bool> simulationPaused{true};
+
+void simulationLoop() {
+    while (simulationRunning) {
+        if (!simulationPaused && simulationTime < SIMULATION_TIME) {
+            globalScheduler->updateSimulation();
+            simulationTime++;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+}
 
 int main() {
-    // Create pipes for IPC
-    int atcToAvn[2]; // ATC -> AVN Generator
-    int avnToAirline[2]; // AVN Generator -> Airline Portal
-    int airlineToAvn[2]; // Airline Portal -> AVN Generator
+    int atcToAvn[2];        // ATC -> AVN Generator
+    int avnToAirline[2];    // AVN Generator -> Airline Portal
+    int airlineToAvn[2];    // Airline Portal -> AVN Generator
     int airlineToStripe[2]; // Airline Portal -> StripePay
-    int stripeToAvn[2]; // StripePay -> AVN Generator
+    int stripeToAvn[2];     // StripePay -> AVN Generator
 
     if (pipe(atcToAvn) == -1 || pipe(avnToAirline) == -1 || pipe(airlineToAvn) == -1 ||
         pipe(airlineToStripe) == -1 || pipe(stripeToAvn) == -1) {
@@ -1964,10 +2128,9 @@ int main() {
         return 1;
     }
 
-    // Fork AVN Generator process
     pid_t avnPid = fork();
     if (avnPid == 0) {
-        // Child process: AVN Generator
+        //avn generator
         close(atcToAvn[1]);
         close(avnToAirline[0]);
         close(airlineToAvn[1]);
@@ -1984,10 +2147,9 @@ int main() {
         return 1;
     }
 
-    // Fork StripePay process
     pid_t stripePid = fork();
     if (stripePid == 0) {
-        // Child process: StripePay
+        //stripePay
         close(atcToAvn[0]);
         close(atcToAvn[1]);
         close(avnToAirline[0]);
@@ -2007,106 +2169,100 @@ int main() {
         return 1;
     }
 
-    // Parent process: ATC Controller
+    //parent process atc controller
     close(avnToAirline[0]);
     close(airlineToAvn[1]);
     close(airlineToStripe[0]);
     close(stripeToAvn[0]);
     close(stripeToAvn[1]);
     
-    // We'll fork a separate process for Airline Portal if needed
     pid_t airlinePid = -1;
 
-    // Create FlightScheduler
     FlightScheduler scheduler(atcToAvn[1]);
-    
-    // Current simulation time
-    int simulationTime = 0;
+    globalScheduler = &scheduler;
+    std::thread simThread;
+    bool simThreadStarted = false;
     const int MAX_SIMULATION_TIME = SIMULATION_TIME;
     
     bool continueProgram = true;
-    
     while (continueProgram) {
-        // Display main menu
-        system("clear"); // Clear screen
+        system("clear");
         cout << "╔══════════════════════════════════════╗" << endl;
         cout << "║         AIRCONTROLX SYSTEM           ║" << endl;
         cout << "╠══════════════════════════════════════╣" << endl;
-        cout << "║ 1. Run Air Traffic Simulation        ║" << endl;
+        cout << "║ 1. View Simulation (Graphics)        ║" << endl;
         cout << "║ 2. View & Pay AVNs                   ║" << endl;
         cout << "║ 3. View Airline Violations           ║" << endl;
         cout << "║ 4. Exit                              ║" << endl;
         cout << "╚══════════════════════════════════════╝" << endl;
         cout << "Select an option: ";
-        
         int choice;
         cin >> choice;
-        
         switch (choice) {
-            case 1: {
-                // Run simulation mode
-                system("clear");
-                cout << "Starting Air Traffic Simulation..." << endl;
-                cout << "Press 'q' at any time to return to the main menu." << endl;
-                sleep(1);
-                
-                // Non-blocking input setup
-                struct termios oldSettings, newSettings;
-                tcgetattr(STDIN_FILENO, &oldSettings);
-                newSettings = oldSettings;
-                newSettings.c_lflag &= ~(ICANON | ECHO);
-                tcsetattr(STDIN_FILENO, TCSANOW, &newSettings);
-                
-                fd_set readfds;
-                struct timeval tv;
-                bool simulationRunning = true;
-                
-                // Run the simulation loop
-                while (simulationRunning && simulationTime < MAX_SIMULATION_TIME) {
-                    // Update simulation
-                    scheduler.updateSimulation();
-                    
-                    // Display status
-                    //system("clear");
-                    scheduler.printStatus();
-                    cout << "\nSimulation Time: " << ++simulationTime << "/" << MAX_SIMULATION_TIME << " seconds" << endl;
-                    cout << "Press 'q' to return to the main menu." << endl;
-                    
-                    // Check for user input (non-blocking)
-                    FD_ZERO(&readfds);
-                    FD_SET(STDIN_FILENO, &readfds);
-                    tv.tv_sec = 0;
-                    tv.tv_usec = 0;
-                    
-                    if (select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv)) {
-                        char c = getchar();
-                        if (c == 'q' || c == 'Q') {
-                            simulationRunning = false;
-                        }
-                    }
-                    
-                    // Simulate 1 second passing
-                    sleep(1);
-                }
-                
-                // Restore terminal settings
-                tcsetattr(STDIN_FILENO, TCSANOW, &oldSettings);
-                
-                if (simulationTime >= MAX_SIMULATION_TIME) {
-                    cout << "\nSimulation completed!" << endl;
-                    cout << "Press Enter to return to the main menu...";
-                    cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-                    cin.get();
-                }
-                break;
+
+        case 1: {
+            if (!simThreadStarted) {
+                simulationPaused = false;
+                simThread = std::thread(simulationLoop);
+                simThreadStarted = true;
+            } else {
+                simulationPaused = false;
             }
+            system("clear");
+            cout << "Opening Air Traffic Simulation in GRAPHICS MODE..." << endl;
+            cout << "Press 'q' at any time to return to the main menu." << endl;
+            sleep(1);
+            struct termios oldSettings, newSettings;
+            tcgetattr(STDIN_FILENO, &oldSettings);
+            newSettings = oldSettings;
+            newSettings.c_lflag &= ~(ICANON | ECHO);
+            tcsetattr(STDIN_FILENO, TCSANOW, &newSettings);
+            fd_set readfds;
+            struct timeval tv;
+            AirportGraphics* graphics = new AirportGraphics();
             
+            int lastPrintTime = -10; 
+            const int PRINT_INTERVAL = 1; 
+            
+            while (true) {
+                if (graphics && graphics->isOpen()) {
+                    graphics->handleEvents();
+                    graphics->update(scheduler.getActiveFlights(), simulationTime);
+                    
+                    if (simulationTime >= lastPrintTime + PRINT_INTERVAL) {
+                        cout << "\033[2J\033[H"; 
+                        cout << "AIR TRAFFIC SIMULATION (Terminal View)" << endl;
+                        cout << "SFML window is running alongside this terminal" << endl;
+                        cout << "Press 'q' at any time to return to the main menu" << endl;
+                        cout << "--------------------------------------------" << endl;
+                        
+                        scheduler.printStatus();
+                        
+                        lastPrintTime = simulationTime;
+                    }
+                }
+                
+                FD_ZERO(&readfds);
+                FD_SET(STDIN_FILENO, &readfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 0;
+                if (select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv)) {
+                    char c = getchar();
+                    if (c == 'q' || c == 'Q') {
+                        break;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            tcsetattr(STDIN_FILENO, TCSANOW, &oldSettings);
+            if (graphics) {
+                delete graphics;
+            }
+            simulationPaused = true;
+            break;
+        }
             case 2: {
-              
-                
-                // AVN Management Menu
                 bool avnMenuActive = true;
-                
                 while (avnMenuActive) {
                     system("clear");
                     cout << "╔══════════════════════════════════════╗" << endl;
@@ -2119,10 +2275,8 @@ int main() {
                     cout << "║ 5. Return to Main Menu               ║" << endl;
                     cout << "╚══════════════════════════════════════╝" << endl;
                     cout << "Select an option: ";
-                    
                     int avnChoice;
                     cin >> avnChoice;
-                    
                     switch (avnChoice) {
                         case 1: {
                             system("clear");
@@ -2140,7 +2294,6 @@ int main() {
                                         hasUnpaidAVNs = true;
                                     }
                                 }
-                                
                                 if (!hasUnpaidAVNs) {
                                     cout << "All AVNs have been paid." << endl;
                                 }
@@ -2150,12 +2303,10 @@ int main() {
                             cin.get();
                             break;
                         }
-                        
                         case 2: {
                             string airline;
                             cout << "Enter airline name: ";
                             cin >> airline;
-                            
                             system("clear");
                             scheduler.displayAirlineViolations(airline);
                             cout << "\nPress Enter to continue...";
@@ -2163,12 +2314,10 @@ int main() {
                             cin.get();
                             break;
                         }
-                        
                         case 3: {
                             int avnId;
                             cout << "Enter AVN ID: ";
                             cin >> avnId;
-                            
                             system("clear");
                             scheduler.displayAVNDetails(avnId);
                             cout << "\nPress Enter to continue...";
@@ -2176,42 +2325,28 @@ int main() {
                             cin.get();
                             break;
                         }
-                        
-                        // Modify the case 4 in the AVN Management Menu section in main() around line 2190-2235
-
                         case 4: {
                             int avnId;
                             cout << "Enter AVN ID to pay: ";
                             cin >> avnId;
-                            
-                            // First, check if the AVN exists and get its required amount
                             const auto& allAVNs = scheduler.getAllAVNs();
                             bool avnFound = false;
-                            
                             for (const auto& avn : allAVNs) {
                                 if (avn->id == avnId) {
                                     avnFound = true;
-                                    
-                                    // Check if already paid
                                     if (avn->status == PaymentStatus::PAID) {
                                         system("clear");
                                         cout << "AVN #" << avnId << " has already been paid.\n";
                                         break;
                                     }
-                                    
-                                    // Display the AVN information before payment
                                     system("clear");
                                     cout << "=== AVN Payment ===\n";
                                     cout << "AVN #" << avn->id << " | " << avn->airline << " flight " << avn->flightNumber << "\n";
                                     cout << "Required amount: PKR " << fixed << setprecision(2) << avn->totalAmount << "\n\n";
-                                    
-                                    // Ask for confirmation
                                     char confirm;
                                     cout << "Do you want to pay this amount? (y/n): ";
                                     cin >> confirm;
-                                    
                                     if (confirm == 'y' || confirm == 'Y') {
-                                        // Process the payment with exact required amount
                                         scheduler.processAVNPayment(avnId, avn->totalAmount);
                                         cout << "\nPayment successful!\n";
                                     } else {
@@ -2220,22 +2355,18 @@ int main() {
                                     break;
                                 }
                             }
-                            
                             if (!avnFound) {
                                 system("clear");
                                 cout << "AVN #" << avnId << " not found.\n";
                             }
-                            
                             cout << "\nPress Enter to continue...";
                             cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
                             cin.get();
                             break;
                         }
-                        
                         case 5:
                             avnMenuActive = false;
                             break;
-                            
                         default:
                             cout << "Invalid choice. Please try again." << endl;
                             sleep(1);
@@ -2244,11 +2375,8 @@ int main() {
                 }
                 break;
             }
-            
             case 3: {
-                // View Airline Violations (with a submenu)
                 bool airlineMenuActive = true;
-                
                 while (airlineMenuActive) {
                     system("clear");
                     cout << "╔══════════════════════════════════════╗" << endl;
@@ -2264,12 +2392,9 @@ int main() {
                     cout << "║ 8. Return to Main Menu               ║" << endl;
                     cout << "╚══════════════════════════════════════╝" << endl;
                     cout << "Select an option: ";
-                    
                     int airlineChoice;
                     cin >> airlineChoice;
-                    
                     string selectedAirline = "";
-                    
                     switch (airlineChoice) {
                         case 1:
                             selectedAirline = "PIA";
@@ -2302,7 +2427,6 @@ int main() {
                             sleep(1);
                             continue;
                     }
-                    
                     if (!selectedAirline.empty()) {
                         system("clear");
                         scheduler.displayAirlineViolations(selectedAirline);
@@ -2313,34 +2437,30 @@ int main() {
                 }
                 break;
             }
-            
             case 4:
                 continueProgram = false;
                 cout << "\nExiting AirControlX System. Goodbye!" << endl;
                 break;
-                
             default:
                 cout << "Invalid choice. Please try again." << endl;
                 sleep(1);
                 break;
         }
     }
-    
-    // Clean up and wait for child processes
+    simulationRunning = false;
+    simulationPaused = false;
+    if (simThreadStarted && simThread.joinable()) simThread.join();
     if (avnPid > 0) {
         kill(avnPid, SIGTERM);
         waitpid(avnPid, nullptr, 0);
     }
-    
     if (stripePid > 0) {
         kill(stripePid, SIGTERM);
         waitpid(stripePid, nullptr, 0);
     }
-    
     if (airlinePid > 0) {
         kill(airlinePid, SIGTERM);
         waitpid(airlinePid, nullptr, 0);
     }
-    
     return 0;
 }

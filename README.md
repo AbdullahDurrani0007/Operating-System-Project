@@ -46,9 +46,15 @@ This project is divided into three modules:
 1. **Dependencies**: Ensure you have a C++ compiler (e.g., `g++`) and optionally install SFML/OpenGL for graphics.
 2. **Compile**:
 
+   * With SFML(Graphics)
    ```bash
-   g++ -std=c++17 source.cpp -lsfml-graphics -lsfml-window -lsfml-system -lpthread -o aircontrolx
+   g++ -std=c++17 source_SFML.cpp -lsfml-graphics -lsfml-window -lsfml-system -lpthread -o aircontrolx
    ```
+   * Without SFML(Graphics)
+    ```bash
+   g++ -std=c++17 source.cpp -lpthread -o aircontrolx
+   ```
+   
 3. **Run**:
 
    ```bash
@@ -62,6 +68,6 @@ This project is divided into three modules:
 
 ## Authors
 
-* \[Abdullah Durrani]
-* \[Hanzlah Mehmood]
+* \Hanzlah Mehmood Ch
+* \Abdullah Durrani
 ---
