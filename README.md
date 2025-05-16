@@ -68,6 +68,6 @@ This project is divided into three modules:
 
 ## Authors
 
-* \Hanzlah Mehmood Ch
-* \Abdullah Durrani
+* <a href=https://github.com/HanzlahCh>Hanzlah Mehmood Ch</a>
+* <a href=https://github.com/AbdullahDurrani0007>Abdullah Durrani</a>
 ---
